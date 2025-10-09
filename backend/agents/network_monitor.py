@@ -22,11 +22,12 @@ class NetworkMonitorAgent(BaseAgent):
     - Protocol analysis
     """
 
-    def __init__(self, interface: str = "eth0", agent_id: Optional[str] = None):
+    def __init__(self, interface: str = "eth0", agent_id: Optional[str] = None, broadcast_callback=None):
         super().__init__(name="NetworkMonitor", agent_id=agent_id)
         self.interface = interface
         self.packet_count = 0
         self.alerts = []
+        self.broadcast_callback = broadcast_callback  # Callback to broadcast alerts
 
         # Traffic tracking
         self.port_scan_tracker = defaultdict(set)  # IP -> set of ports
@@ -103,6 +104,13 @@ class NetworkMonitorAgent(BaseAgent):
 
                 # Log alert
                 logger.warning(f"🚨 ALERT: {alert['type']} from {alert['source_ip']}")
+
+                # Broadcast alert in real-time
+                if self.broadcast_callback:
+                    try:
+                        asyncio.create_task(self.broadcast_callback(alert))
+                    except Exception as e:
+                        logger.error(f"Failed to broadcast alert: {e}")
 
         except Exception as e:
             logger.error(f"❌ Packet analysis error: {e}")

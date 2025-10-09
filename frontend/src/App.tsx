@@ -8,6 +8,7 @@ import AttackSimulator from './pages/AttackSimulator'
 import ThreatAnalysis from './pages/ThreatAnalysis'
 import Reports from './pages/Reports'
 import AIChat from './pages/AIChat'
+import ThreatAlertsContainer from './components/ThreatAlertsContainer'
 
 function App() {
   return (
@@ -24,6 +25,8 @@ function App() {
             },
           }}
         />
+        {/* Real-time Threat Alert Popups */}
+        <ThreatAlertsContainer />
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />

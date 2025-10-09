@@ -7,6 +7,7 @@ import {
   getNetworkAlerts,
 } from '../services/api';
 import toast from 'react-hot-toast';
+import { websocketService } from '../services/websocket';
 
 const NetworkMonitor = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -15,10 +16,49 @@ const NetworkMonitor = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Connect WebSocket
+    websocketService.connect();
+
+    // Listen for real-time alerts
+    const handleAlert = (alertData: any) => {
+      // Add new alert to the list
+      setAlerts((prev: any) => [alertData, ...prev].slice(0, 20));
+
+      // Show toast notification
+      toast.error(`${alertData.type}: ${alertData.source_ip}`, {
+        icon: '🚨',
+        duration: 3000,
+      });
+    };
+
+    // Listen for system updates
+    const handleUpdate = (updateData: any) => {
+      if (updateData.agents?.network_monitor) {
+        // Update statistics from WebSocket
+        const networkAgent = updateData.agents.network_monitor;
+        if (networkAgent.metrics) {
+          setStatistics((prev: any) => ({
+            ...prev,
+            ...networkAgent.metrics,
+          }));
+        }
+      }
+    };
+
+    websocketService.on('alert', handleAlert);
+    websocketService.on('message', handleUpdate);
+
+    // Fallback polling (less frequent with WebSocket)
+    let interval: any = null;
     if (isMonitoring) {
-      const interval = setInterval(loadData, 2000);
-      return () => clearInterval(interval);
+      interval = setInterval(loadData, 5000); // Every 5s as backup
     }
+
+    return () => {
+      if (interval) clearInterval(interval);
+      websocketService.off('alert', handleAlert);
+      websocketService.off('message', handleUpdate);
+    };
   }, [isMonitoring]);
 
   const loadData = async () => {

@@ -55,7 +55,8 @@ async def startup_event():
     try:
         # Initialize agents
         agents["network_monitor"] = NetworkMonitorAgent(
-            interface=settings.NETWORK_INTERFACE
+            interface=settings.NETWORK_INTERFACE,
+            broadcast_callback=broadcast_alert
         )
         agents["attack_simulator"] = AttackSimulatorAgent()
         agents["ai_coordinator"] = AIResponseCoordinator()
@@ -343,11 +344,40 @@ async def broadcast_alert(alert: Dict[str, Any]):
         "timestamp": datetime.now().isoformat()
     }
 
+    disconnected = []
+    for connection in websocket_connections:
+        try:
+            await connection.send_json(message)
+            logger.debug(f"✓ Alert broadcasted to WebSocket client")
+        except Exception as e:
+            logger.error(f"Failed to send alert to WebSocket: {e}")
+            disconnected.append(connection)
+
+    # Remove disconnected clients
+    for conn in disconnected:
+        websocket_connections.remove(conn)
+
+
+async def broadcast_update(update_type: str, data: Dict[str, Any]):
+    """Broadcast general updates to all connected WebSocket clients"""
+    message = {
+        "type": "update",
+        "update_type": update_type,
+        "data": data,
+        "timestamp": datetime.now().isoformat()
+    }
+
+    disconnected = []
     for connection in websocket_connections:
         try:
             await connection.send_json(message)
         except Exception as e:
-            logger.error(f"Failed to send alert to WebSocket: {e}")
+            logger.error(f"Failed to send update to WebSocket: {e}")
+            disconnected.append(connection)
+
+    # Remove disconnected clients
+    for conn in disconnected:
+        websocket_connections.remove(conn)
 
 
 # ============================================================================

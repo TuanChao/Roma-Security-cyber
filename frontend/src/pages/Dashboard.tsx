@@ -4,6 +4,8 @@ import { getDashboardOverview, getAgentsStatus } from '../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import GeminiIcon from '../components/GeminiIcon';
 import toast from 'react-hot-toast';
+import { websocketService } from '../services/websocket';
+import LiveActivityFeed from '../components/LiveActivityFeed';
 
 const Dashboard = () => {
   const [overview, setOverview] = useState<any>(null);
@@ -12,8 +14,26 @@ const Dashboard = () => {
 
   useEffect(() => {
     loadDashboard();
-    const interval = setInterval(loadDashboard, 5000); // Refresh every 5s
-    return () => clearInterval(interval);
+
+    // Connect WebSocket for real-time updates
+    websocketService.connect();
+
+    // Listen for real-time updates
+    const handleUpdate = (updateData: any) => {
+      if (updateData.agents) {
+        setAgentsStatus(updateData.agents);
+      }
+    };
+
+    websocketService.on('message', handleUpdate);
+
+    // Fallback polling (less frequent since we have WebSocket)
+    const interval = setInterval(loadDashboard, 30000); // Refresh every 30s as backup
+
+    return () => {
+      clearInterval(interval);
+      websocketService.off('message', handleUpdate);
+    };
   }, []);
 
   const loadDashboard = async () => {
@@ -250,6 +270,9 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Live Activity Feed */}
+      <LiveActivityFeed maxItems={100} showFilters={true} />
     </div>
   );
 };
