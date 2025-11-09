@@ -34,14 +34,17 @@ class NotificationService:
             logger.debug("No notification channels configured")
             return False
 
-        # Format alert message
+        # Store incident for Discord embed
+        self._current_incident = incident
+
+        # Format alert message for Telegram
         message = self._format_alert_message(incident, severity)
 
         tasks = []
         if 'telegram' in self.enabled_channels:
             tasks.append(self._send_telegram(message, severity))
         if 'discord' in self.enabled_channels:
-            tasks.append(self._send_discord(message, severity))
+            tasks.append(self._send_discord_embed(severity, incident))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         success = any(r is True for r in results)
@@ -133,38 +136,124 @@ class NotificationService:
             logger.error(f"Telegram notification error: {e}")
             return False
 
-    async def _send_discord(self, message: str, severity: str) -> bool:
-        """Send alert via Discord webhook"""
+    async def _send_discord_embed(self, severity: str, incident: Dict[str, Any] = None) -> bool:
+        """Send beautifully formatted Discord embed"""
         try:
-            # Color based on severity
+            # Color and emoji based on severity
             color_map = {
                 'low': 0x00FF00,      # Green
                 'medium': 0xFFFF00,   # Yellow
                 'high': 0xFF9900,     # Orange
                 'critical': 0xFF0000  # Red
             }
-            color = color_map.get(severity.lower(), 0x808080)
+            emoji_map = {
+                'low': '🟢',
+                'medium': '🟡',
+                'high': '🟠',
+                'critical': '🔴'
+            }
 
+            color = color_map.get(severity.lower(), 0x808080)
+            emoji = emoji_map.get(severity.lower(), '⚪')
+
+            # If we have incident data, use it; otherwise create a generic alert
+            if not incident:
+                incident = getattr(self, '_current_incident', {
+                    'type': 'security_event',
+                    'source_ip': 'N/A',
+                    'dest_ip': 'N/A',
+                    'protocol': 'N/A',
+                    'ai_analysis': {
+                        'explanation': 'Security event detected',
+                        'immediate_actions': ['Monitor the situation'],
+                        'mitigation': 'Review security policies',
+                        'confidence': 0.5
+                    }
+                })
+
+            ai_analysis = incident.get('ai_analysis', {})
+            incident_type = incident.get('type', 'Unknown').replace('_', ' ').title()
+            confidence = int(ai_analysis.get('confidence', 0.5) * 100)
+
+            # Build immediate actions
+            actions = ai_analysis.get('immediate_actions', ['Monitor the situation'])
+            actions_text = '\n'.join([f'`{i+1}.` {action}' for i, action in enumerate(actions[:3])])
+
+            # Create beautiful embed
             embed = {
                 "embeds": [{
-                    "title": f"🚨 Security Alert - {severity.upper()}",
-                    "description": message,
+                    "author": {
+                        "name": "Roma Security Cyber Agent System",
+                        "icon_url": "https://cdn-icons-png.flaticon.com/512/6195/6195699.png"
+                    },
+                    "title": f"{emoji} SECURITY ALERT - {severity.upper()}",
+                    "description": f"**{incident_type}** has been detected and analyzed by AI",
                     "color": color,
-                    "timestamp": datetime.now().isoformat()
+                    "fields": [
+                        {
+                            "name": "🎯 Source IP",
+                            "value": f"`{incident.get('source_ip', 'N/A')}`",
+                            "inline": True
+                        },
+                        {
+                            "name": "🎯 Target IP",
+                            "value": f"`{incident.get('dest_ip', 'N/A')}`",
+                            "inline": True
+                        },
+                        {
+                            "name": "📡 Protocol",
+                            "value": f"`{incident.get('protocol', 'N/A')}`",
+                            "inline": True
+                        },
+                        {
+                            "name": "🤖 AI Analysis",
+                            "value": ai_analysis.get('explanation', 'AI analysis in progress...')[:1024],
+                            "inline": False
+                        },
+                        {
+                            "name": "⚡ Immediate Actions Required",
+                            "value": actions_text or 'No immediate action required',
+                            "inline": False
+                        },
+                        {
+                            "name": "🛡️ Mitigation Strategy",
+                            "value": ai_analysis.get('mitigation', 'Review security policies and implement monitoring')[:1024],
+                            "inline": False
+                        },
+                        {
+                            "name": "📈 Confidence Score",
+                            "value": f"`{confidence}%`",
+                            "inline": True
+                        },
+                        {
+                            "name": "⏰ Detection Time",
+                            "value": f"`{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`",
+                            "inline": True
+                        }
+                    ],
+                    "footer": {
+                        "text": "⚡ Powered by Roma AI Security • Real-time Threat Detection",
+                        "icon_url": "https://cdn-icons-png.flaticon.com/512/2092/2092665.png"
+                    },
+                    "timestamp": datetime.now().isoformat(),
+                    "thumbnail": {
+                        "url": "https://cdn-icons-png.flaticon.com/512/3064/3064197.png"
+                    }
                 }]
             }
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.discord_webhook, json=embed) as response:
                     if response.status in [200, 204]:
-                        logger.debug("✓ Discord alert sent")
+                        logger.debug("✓ Discord alert sent with beautiful embed")
                         return True
                     else:
-                        logger.warning(f"Discord send failed: {response.status}")
+                        error_text = await response.text()
+                        logger.warning(f"Discord send failed: {response.status} - {error_text}")
                         return False
 
         except Exception as e:
-            logger.error(f"Discord notification error: {e}")
+            logger.error(f"Discord embed notification error: {e}")
             return False
 
     async def send_summary_report(self, stats: Dict[str, Any]) -> bool:
